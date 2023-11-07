@@ -73,17 +73,15 @@ static inline int32_t WelsCheckLevelLimitation (const SWelsSPS* kpSps, const SLe
   return 1;
 
 }
-int32_t WelsAdjustLevel (SSpatialLayerConfig* pSpatialLayer) {
-  int32_t iLevel = (int32_t)pSpatialLayer->uiLevelIdc;
+int32_t WelsAdjustLevel (SSpatialLayerConfig* pSpatialLayer, const SLevelLimits* pCurLevel) {
   int32_t iMaxBitrate = pSpatialLayer->iMaxSpatialBitrate;
-  while (iLevel <= LEVEL_5_2) {
-    int32_t iLevelMaxBitrate = g_ksLevelLimits[pSpatialLayer->uiLevelIdc - 1].uiMaxBR * CpbBrNalFactor;
-    if (iMaxBitrate < iLevelMaxBitrate) {
-      pSpatialLayer->uiLevelIdc = (ELevelIdc)iLevel;
+  do {
+    if (iMaxBitrate <= (int32_t) (pCurLevel->uiMaxBR * CpbBrNalFactor)) {
+      pSpatialLayer->uiLevelIdc = pCurLevel->uiLevelIdc;
       return 0;
     }
-    iLevel++;
-  }
+    pCurLevel++;
+  } while (pCurLevel->uiLevelIdc != LEVEL_5_2);
   return 1;
 }
 
@@ -108,9 +106,9 @@ static int32_t WelsCheckNumRefSetting (SLogContext* pLogCtx, SWelsSvcCodingParam
   int32_t iNeededRefNum = (pParam->uiIntraPeriod != 1) ? (iCurrentStrNum + pParam->iLTRRefNum) : 0;
 
   iNeededRefNum = WELS_CLIP3 (iNeededRefNum,
-                                MIN_REF_PIC_COUNT,
-                                (pParam->iUsageType == CAMERA_VIDEO_REAL_TIME) ? MAX_REFERENCE_PICTURE_COUNT_NUM_CAMERA :
-                                MAX_REFERENCE_PICTURE_COUNT_NUM_SCREEN);
+                              MIN_REF_PIC_COUNT,
+                              (pParam->iUsageType == CAMERA_VIDEO_REAL_TIME) ? MAX_REFERENCE_PICTURE_COUNT_NUM_CAMERA :
+                              MAX_REFERENCE_PICTURE_COUNT_NUM_SCREEN);
   // to adjust default or invalid input, in case pParam->iNumRefFrame do not have a valid value for the next step
   if (pParam->iNumRefFrame == AUTO_REF_PIC_COUNT) {
     pParam->iNumRefFrame = iNeededRefNum;
@@ -136,7 +134,7 @@ static int32_t WelsCheckNumRefSetting (SLogContext* pLogCtx, SWelsSvcCodingParam
 
 int32_t WelsCheckRefFrameLimitationNumRefFirst (SLogContext* pLogCtx, SWelsSvcCodingParam* pParam) {
 
-  if (WelsCheckNumRefSetting (pLogCtx, pParam, true)) {
+  if (WelsCheckNumRefSetting (pLogCtx, pParam, false)) {
     // we take num-ref as the honored setting but it conflicts with temporal and LTR
     return ENC_RETURN_UNSUPPORTED_PARA;
   }
@@ -200,20 +198,27 @@ int32_t WelsWriteVUI (SWelsSPS* pSps, SBitStringAux* pBitStringAux) {
   SBitStringAux* pLocalBitStringAux = pBitStringAux;
   assert (pSps != NULL && pBitStringAux != NULL);
 
-  BsWriteOneBit (pLocalBitStringAux, false); //aspect_ratio_info_present_flag
+  BsWriteOneBit (pLocalBitStringAux, pSps->bAspectRatioPresent); //aspect_ratio_info_present_flag
+  if (pSps->bAspectRatioPresent) {
+    BsWriteBits (pLocalBitStringAux, 8, pSps->eAspectRatio); // aspect_ratio_idc
+    if (pSps->eAspectRatio == ASP_EXT_SAR) {
+      BsWriteBits (pLocalBitStringAux, 16, pSps->sAspectRatioExtWidth); // sar_width
+      BsWriteBits (pLocalBitStringAux, 16, pSps->sAspectRatioExtHeight); // sar_height
+    }
+  }
   BsWriteOneBit (pLocalBitStringAux, false); //overscan_info_present_flag
 
   // See codec_app_def.h and parameter_sets.h for more info about members bVideoSignalTypePresent through uiColorMatrix.
   BsWriteOneBit (pLocalBitStringAux, pSps->bVideoSignalTypePresent); //video_signal_type_present_flag
-  if  ( pSps->bVideoSignalTypePresent )
-  {//write video signal type info to header
+  if (pSps->bVideoSignalTypePresent) {
+    //write video signal type info to header
 
     BsWriteBits (pLocalBitStringAux, 3, pSps->uiVideoFormat);
     BsWriteOneBit (pLocalBitStringAux, pSps->bFullRange);
     BsWriteOneBit (pLocalBitStringAux, pSps->bColorDescriptionPresent);
 
-    if  ( pSps->bColorDescriptionPresent )
-    {//write color description info to header
+    if (pSps->bColorDescriptionPresent) {
+      //write color description info to header
 
       BsWriteBits (pLocalBitStringAux, 8, pSps->uiColorPrimaries);
       BsWriteBits (pLocalBitStringAux, 8, pSps->uiTransferCharacteristics);
@@ -267,7 +272,14 @@ int32_t WelsWriteSpsSyntax (SWelsSPS* pSps, SBitStringAux* pBitStringAux, int32_
   BsWriteOneBit (pLocalBitStringAux, pSps->bConstraintSet1Flag);        // bConstraintSet1Flag
   BsWriteOneBit (pLocalBitStringAux, pSps->bConstraintSet2Flag);        // bConstraintSet2Flag
   BsWriteOneBit (pLocalBitStringAux, pSps->bConstraintSet3Flag);        // bConstraintSet3Flag
-  BsWriteBits (pLocalBitStringAux, 4, 0);                               // reserved_zero_4bits, equal to 0
+  if (PRO_HIGH == pSps->uiProfileIdc || PRO_EXTENDED == pSps->uiProfileIdc ||
+      PRO_MAIN == pSps->uiProfileIdc) {
+    BsWriteOneBit (pLocalBitStringAux, 1);        // bConstraintSet4Flag: If profile_idc is equal to 77, 88, or 100, constraint_set4_flag equal to 1 indicates that the value of frame_mbs_only_flag is equal to 1. constraint_set4_flag equal to 0 indicates that the value of frame_mbs_only_flag may or may not be equal to 1.
+    BsWriteOneBit (pLocalBitStringAux, 1);        // bConstraintSet5Flag: If profile_idc is equal to 77, 88, or 100, constraint_set5_flag equal to 1 indicates that B slice types are not present in the coded video sequence. constraint_set5_flag equal to 0 indicates that B slice types may or may not be present in the coded video sequence.
+    BsWriteBits (pLocalBitStringAux, 2, 0);                               // reserved_zero_2bits, equal to 0
+  } else {
+    BsWriteBits (pLocalBitStringAux, 4, 0);                               // reserved_zero_4bits, equal to 0
+  }
   BsWriteBits (pLocalBitStringAux, 8, pSps->iLevelIdc);                 // iLevelIdc
   BsWriteUE (pLocalBitStringAux, pSps->uiSpsId + pSpsIdDelta[pSps->uiSpsId]);        // seq_parameter_set_id
 
@@ -292,7 +304,11 @@ int32_t WelsWriteSpsSyntax (SWelsSPS* pSps, SBitStringAux* pBitStringAux, int32_
   BsWriteUE (pLocalBitStringAux, pSps->iMbHeight - 1);          // pic_height_in_map_units_minus1
   BsWriteOneBit (pLocalBitStringAux, true/*pSps->bFrameMbsOnlyFlag*/);  // bFrameMbsOnlyFlag
 
-  BsWriteOneBit (pLocalBitStringAux, 0/*pSps->bDirect8x8InferenceFlag*/);       // direct_8x8_inference_flag
+  uint8_t d8x8 = 0;
+  if (pSps->iLevelIdc >= 30)
+    d8x8 = 1;
+  BsWriteOneBit (pLocalBitStringAux, d8x8/*pSps->bDirect8x8InferenceFlag*/);       // direct_8x8_inference_flag
+
   BsWriteOneBit (pLocalBitStringAux, pSps->bFrameCroppingFlag); // bFrameCroppingFlag
   if (pSps->bFrameCroppingFlag) {
     BsWriteUE (pLocalBitStringAux, pSps->sFrameCrop.iCropLeft);         // frame_crop_left_offset
@@ -511,7 +527,7 @@ int32_t WelsInitSps (SWelsSPS* pSps, SSpatialLayerConfig* pLayerParam, SSpatialL
   if ((pLayerParam->uiLevelIdc == LEVEL_UNKNOWN) || (pLayerParam->uiLevelIdc < uiLevel)) {
     pLayerParam->uiLevelIdc = uiLevel;
   }
-  pSps->iLevelIdc = g_kuiLevelMaps[pLayerParam->uiLevelIdc - 1];
+  pSps->iLevelIdc = pLayerParam->uiLevelIdc;
 
   //bGapsInFrameNumValueAllowedFlag is false when only spatial layer number and temporal layer number is 1, and ltr is 0.
   if ((kiDlayerCount == 1) && (pSps->iNumRefFrames == 1))
@@ -520,6 +536,11 @@ int32_t WelsInitSps (SWelsSPS* pSps, SSpatialLayerConfig* pLayerParam, SSpatialL
     pSps->bGapsInFrameNumValueAllowedFlag = true;
 
   pSps->bVuiParamPresentFlag = true;
+
+  pSps->bAspectRatioPresent = pLayerParam->bAspectRatioPresent;
+  pSps->eAspectRatio = pLayerParam->eAspectRatio;
+  pSps->sAspectRatioExtWidth = pLayerParam->sAspectRatioExtWidth;
+  pSps->sAspectRatioExtHeight = pLayerParam->sAspectRatioExtHeight;
 
   // See codec_app_def.h and parameter_sets.h for more info about members bVideoSignalTypePresent through uiColorMatrix.
   pSps->bVideoSignalTypePresent =   pLayerParam->bVideoSignalTypePresent;
@@ -546,8 +567,7 @@ int32_t WelsInitSubsetSps (SSubsetSps* pSubsetSps, SSpatialLayerConfig* pLayerPa
   WelsInitSps (pSps, pLayerParam, pLayerParamInternal, kuiIntraPeriod, kiNumRefFrame, kuiSpsId, kbEnableFrameCropping,
                bEnableRc, kiDlayerCount, false);
 
-  pSps->uiProfileIdc = (pLayerParam->uiProfileIdc >= PRO_SCALABLE_BASELINE) ? pLayerParam->uiProfileIdc :
-                        PRO_SCALABLE_BASELINE;
+  pSps->uiProfileIdc = pLayerParam->uiProfileIdc ;
 
   pSubsetSps->sSpsSvcExt.iExtendedSpatialScalability    = 0;    /* ESS is 0 in default */
   pSubsetSps->sSpsSvcExt.bAdaptiveTcoeffLevelPredFlag   = false;

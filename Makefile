@@ -7,7 +7,7 @@ vpath %.S $(SRC_PATH)
 vpath %.rc $(SRC_PATH)
 vpath %.pc.in $(SRC_PATH)
 
-OS=$(shell uname | tr A-Z a-z | tr -d \\-[:digit:]. | sed -E 's/^(net|open|free)bsd/bsd/')
+OS=$(shell uname | tr A-Z a-z | tr -d \\-0-9. | sed -E 's/^(net|open|free)bsd/bsd/')
 ARCH=$(shell uname -m)
 LIBPREFIX=lib
 LIBSUFFIX=a
@@ -29,12 +29,17 @@ LIBDIR_NAME=lib
 SHAREDLIB_DIR=$(PREFIX)/lib
 PROJECT_NAME=openh264
 MODULE_NAME=gmpopenh264
-GMP_API_BRANCH=Firefox39
+GMP_API_BRANCH=Firefox114_2
+GTEST_VER=release-1.8.1
 CCASFLAGS=$(CFLAGS)
 STATIC_LDFLAGS=-lstdc++
+STRIP ?= strip
+USE_STACK_PROTECTOR = Yes
+USE_LOW_VERSION_NDK=No
+USE_ANT=No
 
-SHAREDLIB_MAJORVERSION=3
-FULL_VERSION := 1.6.0
+SHAREDLIB_MAJORVERSION=7
+FULL_VERSION := 2.4.0
 
 ifeq (,$(wildcard $(SRC_PATH)gmp-api))
 HAVE_GMP_API=No
@@ -77,7 +82,17 @@ endif
 # Make sure the all target is the first one
 all: libraries binaries
 
+ifeq (android, $(OS))
+USE_LOW_VERSION_NDK = $(shell $(SRC_PATH)build/ndk-version-check.sh $(NDKROOT))
+ifeq (Yes, $(USE_LOW_VERSION_NDK))
+USE_ANT = Yes
+include $(SRC_PATH)build/platform-android-r18b.mk
+else
+include $(SRC_PATH)build/platform-android.mk
+endif
+else
 include $(SRC_PATH)build/platform-$(OS).mk
+endif
 
 MODULE := $(LIBPREFIX)$(MODULE_NAME).$(SHAREDLIBSUFFIX)
 
@@ -101,7 +116,7 @@ ifneq ($(V),Yes)
 endif
 
 
-INCLUDES += -I$(SRC_PATH)codec/api/svc -I$(SRC_PATH)codec/common/inc -Icodec/common/inc
+INCLUDES += -I$(SRC_PATH)codec/api/wels -I$(SRC_PATH)codec/common/inc -Icodec/common/inc
 
 DECODER_INCLUDES += \
     -I$(SRC_PATH)codec/decoder/core/inc \
@@ -174,7 +189,8 @@ gmp-bootstrap:
 	cd gmp-api && git fetch origin && git checkout $(GMP_API_BRANCH)
 
 gtest-bootstrap:
-	git clone https://github.com/google/googletest.git gtest
+	if [ ! -d gtest ] ; then git clone https://github.com/google/googletest.git gtest && \
+       cd gtest && git checkout -b $(GTEST_VER) $(GTEST_VER) ; fi
 
 ifeq ($(HAVE_GTEST),Yes)
 
@@ -230,7 +246,7 @@ $(LIBPREFIX)$(PROJECT_NAME).$(LIBSUFFIX): $(ENCODER_OBJS) $(DECODER_OBJS) $(PROC
 	$(QUIET_AR)$(AR) $(AR_OPTS) $+
 ifeq (True, $(PROCESS_FILES))
 	cp $@ $(LIBPREFIX)$(PROJECT_NAME)$(DEBUGSYMBOLS_TAG).$(LIBSUFFIX)
-	strip $(STRIP_FLAGS) $@ -o $@
+	$(STRIP) $(STRIP_FLAGS) $@ -o $@
 endif
 
 $(LIBPREFIX)$(PROJECT_NAME).$(SHAREDLIBSUFFIXFULLVER): $(ENCODER_OBJS) $(DECODER_OBJS) $(PROCESSING_OBJS) $(COMMON_OBJS)
@@ -238,7 +254,7 @@ $(LIBPREFIX)$(PROJECT_NAME).$(SHAREDLIBSUFFIXFULLVER): $(ENCODER_OBJS) $(DECODER
 	$(QUIET_CXX)$(CXX) $(SHARED) $(CXX_LINK_O) $+ $(LDFLAGS) $(SHLDFLAGS)
 ifeq (True, $(PROCESS_FILES))
 	cp $@ $(LIBPREFIX)$(PROJECT_NAME)$(DEBUGSYMBOLS_TAG).$(SHAREDLIBSUFFIXFULLVER)
-	strip $(STRIP_FLAGS) $@ -o $@
+	$(STRIP) $(STRIP_FLAGS) $@ -o $@
 endif
 
 ifneq ($(SHAREDLIBSUFFIXFULLVER),$(SHAREDLIBSUFFIX))
@@ -268,7 +284,7 @@ $(LIBPREFIX)$(MODULE_NAME).$(SHAREDLIBSUFFIXFULLVER): $(MODULE_OBJS) $(ENCODER_O
 	$(QUIET_CXX)$(CXX) $(SHARED) $(CXX_LINK_O) $+ $(LDFLAGS) $(SHLDFLAGS) $(MODULE_LDFLAGS)
 ifeq (True, $(PROCESS_FILES))
 	cp $@ $(LIBPREFIX)$(MODULE_NAME)$(DEBUGSYMBOLS_TAG).$(SHAREDLIBSUFFIXFULLVER)
-	strip $(STRIP_FLAGS) $@ -o $@
+	$(STRIP) $(STRIP_FLAGS) $@ -o $@
 endif
 
 ifneq ($(SHAREDLIBSUFFIXFULLVER),$(SHAREDLIBSUFFIX))
@@ -282,14 +298,14 @@ endif
 endif
 
 $(PROJECT_NAME).pc: $(PROJECT_NAME).pc.in
-	@sed -e 's;@prefix@;$(PREFIX);' -e 's;@VERSION@;$(CURRENT_VERSION);' -e 's;@LIBS@;;' -e 's;@LIBS_PRIVATE@;$(STATIC_LDFLAGS);' < $< > $@
+	@sed -e 's;@prefix@;$(PREFIX);' -e 's;@libdir@;$(PREFIX)/lib;' -e 's;@VERSION@;$(FULL_VERSION);' -e 's;@LIBS@;;' -e 's;@LIBS_PRIVATE@;$(STATIC_LDFLAGS);' < $< > $@
 
 $(PROJECT_NAME)-static.pc: $(PROJECT_NAME).pc.in
-	@sed -e 's;@prefix@;$(PREFIX);' -e 's;@VERSION@;$(CURRENT_VERSION);' -e 's;@LIBS@;$(STATIC_LDFLAGS);' -e 's;@LIBS_PRIVATE@;;' < $< > $@
+	@sed -e 's;@prefix@;$(PREFIX);' -e 's;@libdir@;$(PREFIX)/lib;' -e 's;@VERSION@;$(FULL_VERSION);' -e 's;@LIBS@;$(STATIC_LDFLAGS);' -e 's;@LIBS_PRIVATE@;;' < $< > $@
 
 install-headers:
 	mkdir -p $(DESTDIR)$(PREFIX)/include/wels
-	install -m 644 $(SRC_PATH)/codec/api/svc/codec*.h $(DESTDIR)$(PREFIX)/include/wels
+	install -m 644 $(SRC_PATH)/codec/api/wels/codec*.h $(DESTDIR)$(PREFIX)/include/wels
 
 install-static-lib: $(LIBPREFIX)$(PROJECT_NAME).$(LIBSUFFIX) install-headers
 	mkdir -p $(DESTDIR)$(PREFIX)/$(LIBDIR_NAME)
@@ -360,11 +376,22 @@ endif
 ifeq (android,$(OS))
 ifeq (./,$(SRC_PATH))
 codec_unittest$(EXEEXT):
+ifeq ($(USE_ANT), Yes)
 	cd ./test/build/android && $(NDKROOT)/ndk-build -B APP_ABI=$(APP_ABI) && android update project -t $(TARGET) -p . && ant debug
+else
+	$(NDK_BUILD) -C test/build/android -B
+	./gradlew unittest:assembleDebug
+endif
 
 clean_Android: clean_Android_ut
 clean_Android_ut:
+ifeq ($(USE_ANT), Yes)
 	-cd ./test/build/android && $(NDKROOT)/ndk-build APP_ABI=$(APP_ABI) clean && ant clean
+else
+	-$(NDK_BUILD) -C test/build/android -B clean
+	-./gradlew unittest:clean
+endif
+
 endif
 endif
 

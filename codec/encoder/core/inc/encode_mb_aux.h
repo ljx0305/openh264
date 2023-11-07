@@ -75,9 +75,7 @@ extern "C" {
 
 #ifdef X86_ASM
 
-#ifndef X86_32_PICASM
 int32_t WelsGetNoneZeroCount_sse2 (int16_t* pLevel);
-#endif
 int32_t WelsGetNoneZeroCount_sse42 (int16_t* pLevel);
 
 /****************************************************************************
@@ -86,9 +84,7 @@ int32_t WelsGetNoneZeroCount_sse42 (int16_t* pLevel);
 void WelsScan4x4Ac_sse2 (int16_t* zig_value, int16_t* pDct);
 void WelsScan4x4DcAc_ssse3 (int16_t* pLevel, int16_t* pDct);
 void WelsScan4x4DcAc_sse2 (int16_t* pLevel, int16_t* pDct);
-#ifndef X86_32_PICASM
 int32_t WelsCalculateSingleCtr4x4_sse2 (int16_t* pDct);
-#endif
 
 /****************************************************************************
  * DCT functions
@@ -151,6 +147,47 @@ void WelsQuant4x4Dc_AArch64_neon (int16_t* pDct, int16_t iFF, int16_t iMF);
 void WelsQuantFour4x4_AArch64_neon (int16_t* pDct, const int16_t* pFF, const int16_t* pMF);
 void WelsQuantFour4x4Max_AArch64_neon (int16_t* pDct, const int16_t* pFF, const int16_t* pMF, int16_t* pMax);
 #endif
+
+#ifdef HAVE_MMI
+int32_t WelsGetNoneZeroCount_mmi (int16_t* pLevel);
+
+/****************************************************************************
+ *  * Scan and Score functions
+ *   ****************************************************************************/
+void WelsScan4x4Ac_mmi (int16_t* zig_value, int16_t* pDct);
+void WelsScan4x4DcAc_mmi (int16_t* pLevel, int16_t* pDct);
+int32_t WelsCalculateSingleCtr4x4_mmi (int16_t* pDct);
+
+/****************************************************************************
+ *  * DCT functions
+ *   ****************************************************************************/
+void WelsDctT4_mmi (int16_t* pDct,  uint8_t* pPixel1, int32_t iStride1, uint8_t* pPixel2, int32_t iStride2);
+void WelsDctFourT4_mmi (int16_t* pDct, uint8_t* pPixel1, int32_t iStride1, uint8_t* pPixel2, int32_t iStride2);
+
+/****************************************************************************
+ *  * HDM and Quant functions
+ *   ****************************************************************************/
+void WelsHadamardT4Dc_mmi (int16_t* pLumaDc, int16_t* pDct);
+
+void WelsQuant4x4_mmi (int16_t* pDct, const int16_t* pFF, const int16_t* pMF);
+void WelsQuant4x4Dc_mmi (int16_t* pDct, int16_t iFF, int16_t iMF);
+void WelsQuantFour4x4_mmi (int16_t* pDct, const int16_t* pFF, const int16_t* pMF);
+void WelsQuantFour4x4Max_mmi (int16_t* pDct, const int16_t* pFF, const int16_t* pMF, int16_t* pMax);
+#endif//HAVE_MMI
+
+#ifdef HAVE_LSX
+void WelsQuantFour4x4_lsx (int16_t* pDct, const int16_t* pFF, const int16_t* pMF);
+void WelsQuantFour4x4Max_lsx (int16_t* pDct, const int16_t* pFF, const int16_t* pMF, int16_t* pMax);
+#endif//HAVE_LSX
+
+#ifdef HAVE_LASX
+/****************************************************************************
+ *  * DCT functions
+ *   ****************************************************************************/
+void WelsDctT4_lasx (int16_t* pDct,  uint8_t* pPixel1, int32_t iStride1, uint8_t* pPixel2, int32_t iStride2);
+void WelsDctFourT4_lasx (int16_t* pDct, uint8_t* pPixel1, int32_t iStride1, uint8_t* pPixel2, int32_t iStride2);
+#endif
+
 #if defined(__cplusplus)
 }
 #endif//__cplusplus

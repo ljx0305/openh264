@@ -1,5 +1,5 @@
 language: cpp
-dist: trusty
+dist: xenial
 
 compiler:
   - g++
@@ -7,11 +7,14 @@ compiler:
 
 before_install:
   - sudo apt-get update -qq
-  - sudo apt-get install -qq nasm g++-multilib gcc-multilib libc6-dev-i386
+  - sudo apt-get install -qq nasm g++-multilib gcc-multilib libc6-dev-i386 python3-pip python3-setuptools
+  - sudo python3 -m pip install meson==0.50.1 ninja
 
 install:
   - make gmp-bootstrap
   - make gtest-bootstrap
+  - meson builddir
+  - ninja -C builddir -v
 
 before_script:
   - WorkingDir=`pwd`
@@ -36,3 +39,4 @@ script:
   -  echo "currrent test is for ${TASK}"
   -  echo "test parameter is ${TestParameter}"
   -  ./run_Test.sh ${TASK}  ${TestParameter}
+  -  if [ ${TASK} == "UnitTest" ]; then echo "Running meson test suite"; meson test -C builddir -v; fi

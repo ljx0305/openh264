@@ -47,7 +47,7 @@
 extern "C" {
 #endif
 
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__CYGWIN__)
 
 #include <windows.h>
 
@@ -59,6 +59,19 @@ typedef    HANDLE                    WELS_EVENT;
 
 #define    WELS_THREAD_ROUTINE_TYPE         DWORD  WINAPI
 #define    WELS_THREAD_ROUTINE_RETURN(rc)   return (DWORD)rc;
+
+#ifdef WINAPI_FAMILY
+#if !WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+#define WP80
+
+#define InitializeCriticalSection(x) InitializeCriticalSectionEx(x, 0, 0)
+#define GetSystemInfo(x) GetNativeSystemInfo(x)
+#define CreateEvent(attr, reset, init, name) CreateEventEx(attr, name, ((reset) ? CREATE_EVENT_MANUAL_RESET : 0) | ((init) ? CREATE_EVENT_INITIAL_SET : 0), EVENT_ALL_ACCESS)
+#define CreateSemaphore(a, b, c, d) CreateSemaphoreEx(a, b, c, d, 0, SEMAPHORE_ALL_ACCESS)
+#define WaitForSingleObject(a, b) WaitForSingleObjectEx(a, b, FALSE)
+#define WaitForMultipleObjects(a, b, c, d) WaitForMultipleObjectsEx(a, b, c, d, FALSE)
+#endif
+#endif
 
 #else // NON-WINDOWS
 
@@ -112,8 +125,8 @@ WELS_THREAD_ERROR_CODE    WelsMutexDestroy (WELS_MUTEX* mutex);
 WELS_THREAD_ERROR_CODE    WelsEventOpen (WELS_EVENT* p_event, const char* event_name = NULL);
 WELS_THREAD_ERROR_CODE    WelsEventClose (WELS_EVENT* event, const char* event_name = NULL);
 
-WELS_THREAD_ERROR_CODE    WelsEventSignal (WELS_EVENT* event);
-WELS_THREAD_ERROR_CODE    WelsEventWait (WELS_EVENT* event,WELS_MUTEX *pMutex = NULL);
+WELS_THREAD_ERROR_CODE    WelsEventSignal (WELS_EVENT* event,WELS_MUTEX *pMutex, int* iCondition);
+WELS_THREAD_ERROR_CODE    WelsEventWait (WELS_EVENT* event,WELS_MUTEX *pMutex, int& iCondition);
 WELS_THREAD_ERROR_CODE    WelsEventWaitWithTimeOut (WELS_EVENT* event, uint32_t dwMilliseconds,WELS_MUTEX *pMutex = NULL);
 WELS_THREAD_ERROR_CODE    WelsMultipleEventsWaitSingleBlocking (uint32_t nCount, WELS_EVENT* event_list,
     WELS_EVENT* master_event = NULL,WELS_MUTEX *pMutex = NULL);

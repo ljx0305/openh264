@@ -93,6 +93,28 @@ void CVAACalculation::InitVaaFuncs (SVaaFuncs& sVaaFuncs, int32_t iCpuFlag) {
     sVaaFuncs.pfVAACalcSadVar    = VAACalcSadVar_AArch64_neon;
   }
 #endif//HAVE_NEON_AARCH64
+
+#ifdef HAVE_MMI
+  if ((iCpuFlag & WELS_CPU_MMI) == WELS_CPU_MMI) {
+    sVaaFuncs.pfVAACalcSad       = VAACalcSad_mmi;
+    sVaaFuncs.pfVAACalcSadBgd    = VAACalcSadBgd_mmi;
+    sVaaFuncs.pfVAACalcSadSsd    = VAACalcSadSsd_mmi;
+    sVaaFuncs.pfVAACalcSadSsdBgd = VAACalcSadSsdBgd_mmi;
+    sVaaFuncs.pfVAACalcSadVar    = VAACalcSadVar_mmi;
+  }
+#endif//HAVE_MMI
+
+#ifdef HAVE_LSX
+  if ((iCpuFlag & WELS_CPU_LSX) == WELS_CPU_LSX) {
+    sVaaFuncs.pfVAACalcSad       = VAACalcSad_lsx;
+    sVaaFuncs.pfVAACalcSadBgd    = VAACalcSadBgd_lsx;
+  }
+#endif//HAVE_LSX
+#ifdef HAVE_LASX
+  if ((iCpuFlag & WELS_CPU_LASX) == WELS_CPU_LASX) {
+    sVaaFuncs.pfVAACalcSadBgd    = VAACalcSadBgd_lasx;
+  }
+#endif//HAVE_LASX
 }
 
 EResult CVAACalculation::Process (int32_t iType, SPixMap* pSrcPixMap, SPixMap* pRefPixMap) {

@@ -17,6 +17,13 @@ CC=cl
 CXX=cl
 AR=lib
 CXX_O=-Fo$@
+
+ifeq ($(ASM_ARCH), arm64)
+CCAS = clang-cl
+CCASFLAGS = -nologo -DHAVE_NEON_AARCH64 --target=arm64-windows
+endif
+
+
 # -D_VARIADIC_MAX=10 is required to fix building gtest on MSVC 2012, but
 # since we don't (easily) know which version of MSVC we use here, we add
 # it unconditionally. The same issue can also be worked around by adding
@@ -25,8 +32,8 @@ CXX_O=-Fo$@
 CFLAGS += -nologo -W3 -EHsc -fp:precise -Zc:wchar_t -Zc:forScope -D_VARIADIC_MAX=10
 CXX_LINK_O=-nologo -Fe$@
 AR_OPTS=-nologo -out:$@
-CFLAGS_OPT=-O2 -Ob1 -Oy- -Zi -GF -Gm- -GS -Gy -DNDEBUG
-CFLAGS_DEBUG=-Od -Oy- -Zi -RTC1 -D_DEBUG
+CFLAGS_OPT=-O2 -Ob1 -Oy- -Zi -FS -GF -GS -Gy -DNDEBUG
+CFLAGS_DEBUG=-Od -Oy- -Zi -FS -RTC1 -D_DEBUG
 CFLAGS_M32=
 CFLAGS_M64=
 LINK_LOCAL_DIR=
@@ -44,7 +51,11 @@ EXTRA_LIBRARY=$(PROJECT_NAME)_dll.lib
 LDFLAGS += -link
 SHLDFLAGS=-debug -map -opt:ref -opt:icf -def:$(SRC_PATH)openh264.def -implib:$(EXTRA_LIBRARY)
 STATIC_LDFLAGS=
-CODEC_UNITTEST_CFLAGS=-D_CRT_SECURE_NO_WARNINGS
+CODEC_UNITTEST_CFLAGS+=-D_CRT_SECURE_NO_WARNINGS
+
+ifneq ($(filter %86 x86_64, $(ARCH)),)
+LDFLAGS += -cetcompat
+endif
 
 %.res: %.rc
 	$(QUIET_RC)rc -fo $@ $<

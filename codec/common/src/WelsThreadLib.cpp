@@ -39,16 +39,20 @@
  */
 
 
-#ifdef __linux__
+#if defined(__linux__) || defined(__GNU__)
 #ifndef _GNU_SOURCE
 #define _GNU_SOURCE
 #endif
 #include <sched.h>
-#elif !defined(_WIN32)
+#elif !defined(_WIN32) && !defined(__CYGWIN__)
 #include <sys/types.h>
-#include <sys/sysctl.h>
 #include <sys/param.h>
 #include <unistd.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten/threading.h>
+#elif !defined(__Fuchsia__)
+#include <sys/sysctl.h>
+#endif
 #ifdef __APPLE__
 #define HW_NCPU_NAME "hw.logicalcpu"
 #else
@@ -67,23 +71,7 @@
 #include <stdlib.h>
 
 
-#ifdef  _WIN32
-
-#ifdef WINAPI_FAMILY
-#if !WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
-#define WP80
-using namespace Platform;
-using namespace Windows::Foundation;
-using namespace Windows::System::Threading;
-#define USE_THREADPOOL
-
-#define InitializeCriticalSection(x) InitializeCriticalSectionEx(x, 0, 0)
-#define GetSystemInfo(x) GetNativeSystemInfo(x)
-#define CreateEvent(attr, reset, init, name) CreateEventEx(attr, name, ((reset) ? CREATE_EVENT_MANUAL_RESET : 0) | ((init) ? CREATE_EVENT_INITIAL_SET : 0), EVENT_ALL_ACCESS)
-#define WaitForSingleObject(a, b) WaitForSingleObjectEx(a, b, FALSE)
-#define WaitForMultipleObjects(a, b, c, d) WaitForMultipleObjectsEx(a, b, c, d, FALSE)
-#endif
-#endif
+#if defined(_WIN32) || defined(__CYGWIN__)
 
 WELS_THREAD_ERROR_CODE    WelsMutexInit (WELS_MUTEX*    mutex) {
   InitializeCriticalSection (mutex);
@@ -129,7 +117,7 @@ WELS_THREAD_ERROR_CODE    WelsMutexDestroy (WELS_MUTEX* mutex) {
 
 #endif /* !_WIN32 */
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__CYGWIN__)
 
 WELS_THREAD_ERROR_CODE    WelsEventOpen (WELS_EVENT* event, const char* event_name) {
   WELS_EVENT   h = CreateEvent (NULL, FALSE, FALSE, NULL);
@@ -140,14 +128,17 @@ WELS_THREAD_ERROR_CODE    WelsEventOpen (WELS_EVENT* event, const char* event_na
   return WELS_THREAD_ERROR_OK;
 }
 
-WELS_THREAD_ERROR_CODE    WelsEventSignal (WELS_EVENT* event) {
-  if (SetEvent (*event)) {
-    return WELS_THREAD_ERROR_OK;
+WELS_THREAD_ERROR_CODE    WelsEventSignal (WELS_EVENT* event, WELS_MUTEX *pMutex, int* iCondition) {
+  (*iCondition) --;
+  if ((*iCondition) <= 0) {
+    if (SetEvent (*event)) {
+      return WELS_THREAD_ERROR_OK;
+    }
   }
   return WELS_THREAD_ERROR_GENERAL;
 }
 
-WELS_THREAD_ERROR_CODE    WelsEventWait (WELS_EVENT* event, WELS_MUTEX* pMutex) {
+WELS_THREAD_ERROR_CODE    WelsEventWait (WELS_EVENT* event, WELS_MUTEX* pMutex, int& iCondition) {
   return WaitForSingleObject (*event, INFINITE);
 }
 
@@ -195,18 +186,7 @@ void WelsSleep (uint32_t dwMilliSecond) {
 
 WELS_THREAD_ERROR_CODE    WelsThreadCreate (WELS_THREAD_HANDLE* thread,  LPWELS_THREAD_ROUTINE  routine,
     void* arg, WELS_THREAD_ATTR attr) {
-#ifdef USE_THREADPOOL
-  HANDLE h = CreateEvent (NULL, FALSE, FALSE, NULL);
-  HANDLE h2;
-  DuplicateHandle (GetCurrentProcess(), h, GetCurrentProcess(), &h2, 0, FALSE, DUPLICATE_SAME_ACCESS);
-  ThreadPool::RunAsync (ref new WorkItemHandler ([ = ] (IAsyncAction^) {
-    routine (arg);
-    SetEvent (h2);
-    CloseHandle (h2);
-  }, CallbackContext::Any), WorkItemPriority::Normal, WorkItemOptions::TimeSliced);
-#else
   WELS_THREAD_HANDLE   h = CreateThread (NULL, 0, routine, arg, 0, NULL);
-#endif
 
   if (h == NULL) {
     return WELS_THREAD_ERROR_GENERAL;
@@ -254,7 +234,7 @@ WELS_THREAD_ERROR_CODE    WelsThreadCreate (WELS_THREAD_HANDLE* thread,  LPWELS_
   err = pthread_attr_init (&at);
   if (err)
     return err;
-#ifndef __ANDROID__
+#if !defined(__ANDROID__) && !defined(__Fuchsia__)
   err = pthread_attr_setscope (&at, PTHREAD_SCOPE_SYSTEM);
   if (err)
     return err;
@@ -327,25 +307,44 @@ void WelsSleep (uint32_t dwMilliSecond) {
   usleep (dwMilliSecond * 1000);
 }
 
-WELS_THREAD_ERROR_CODE   WelsEventSignal (WELS_EVENT* event) {
+WELS_THREAD_ERROR_CODE   WelsEventSignal (WELS_EVENT* event, WELS_MUTEX *pMutex, int* iCondition) {
   WELS_THREAD_ERROR_CODE err = 0;
+  //fprintf( stderr, "before signal it, event=%x iCondition= %d..\n", event, *iCondition );
 #ifdef __APPLE__
+  WelsMutexLock (pMutex);
+  (*iCondition) --;
+  WelsMutexUnlock (pMutex);
+  if ((*iCondition) <= 0) {
   err = pthread_cond_signal (event);
+  //fprintf( stderr, "signal it, event=%x iCondition= %d..\n",event, *iCondition );
+
+  }
 #else
+    (*iCondition) --;
+    if ((*iCondition) <= 0) {
 //  int32_t val = 0;
 //  sem_getvalue(event, &val);
 //  fprintf( stderr, "before signal it, val= %d..\n",val );
   if (event != NULL)
     err = sem_post (*event);
 //  sem_getvalue(event, &val);
-//  fprintf( stderr, "after signal it, val= %d..\n",val );
+    //fprintf( stderr, "signal it, event=%x iCondition= %d..\n",event, *iCondition );
+    }
 #endif
+  //fprintf( stderr, "after signal it, event=%x  iCondition= %d..\n",event, *iCondition );
   return err;
 }
 
-WELS_THREAD_ERROR_CODE WelsEventWait (WELS_EVENT* event, WELS_MUTEX* pMutex) {
+WELS_THREAD_ERROR_CODE WelsEventWait (WELS_EVENT* event, WELS_MUTEX* pMutex, int& iCondition) {
 #ifdef __APPLE__
-  return pthread_cond_wait (event, pMutex);
+  int err = 0;
+  WelsMutexLock(pMutex);
+  //fprintf( stderr, "WelsEventWait event %x %d..\n", event, iCondition );
+  while (iCondition>0) {
+    err = pthread_cond_wait (event, pMutex);
+  }
+  WelsMutexUnlock(pMutex);
+  return err;
 #else
   return sem_wait (*event); // blocking until signaled
 #endif
@@ -484,7 +483,7 @@ WELS_THREAD_ERROR_CODE    WelsQueryLogicalProcessInfo (WelsLogicalProcessInfo* p
 #ifdef ANDROID_NDK
   pInfo->ProcessorCount = android_getCpuCount();
   return WELS_THREAD_ERROR_OK;
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__GNU__)
 
   cpu_set_t cpuset;
 
@@ -511,9 +510,13 @@ WELS_THREAD_ERROR_CODE    WelsQueryLogicalProcessInfo (WelsLogicalProcessInfo* p
 #elif defined(__EMSCRIPTEN__)
 
   // There is not yet a way to determine CPU count in emscripten JS environment.
-  pInfo->ProcessorCount = 1;
+  pInfo->ProcessorCount = emscripten_num_logical_cores();
   return WELS_THREAD_ERROR_OK;
 
+#elif defined(__Fuchsia__)
+
+  pInfo->ProcessorCount = sysconf(_SC_NPROCESSORS_ONLN);
+  return WELS_THREAD_ERROR_OK;
 #else
 
   size_t len = sizeof (pInfo->ProcessorCount);
@@ -532,5 +535,3 @@ WELS_THREAD_ERROR_CODE    WelsQueryLogicalProcessInfo (WelsLogicalProcessInfo* p
 }
 
 #endif
-
-

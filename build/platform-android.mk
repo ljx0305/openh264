@@ -5,7 +5,9 @@ SHAREDLIBSUFFIX = so
 SHAREDLIBSUFFIXFULLVER=$(SHAREDLIBSUFFIX)
 SHAREDLIBSUFFIXMAJORVER=$(SHAREDLIBSUFFIX)
 SHLDFLAGS =
-NDKLEVEL = 12
+
+NDK_TOOLCHAIN_VERSION = clang
+
 ifeq ($(ARCH), arm)
   ifneq ($(APP_ABI), armeabi)
     CFLAGS += -march=armv7-a -mfloat-abi=softfp
@@ -32,31 +34,61 @@ endif
 ifndef NDKROOT
 $(error NDKROOT is not set)
 endif
+
 ifndef TARGET
 $(error TARGET is not set)
 endif
 
-TOOLCHAINPREFIX = $(shell NDK_PROJECT_PATH=$(SRC_PATH)/codec/build/android/dec make --no-print-dir -f $(NDKROOT)/build/core/build-local.mk DUMP_TOOLCHAIN_PREFIX APP_ABI=$(APP_ABI))
+ifeq ($(NDKLEVEL),)
+NDKLEVEL = $(TARGET:android-%=%)
+endif
 
-SYSROOT = $(NDKROOT)/platforms/android-$(NDKLEVEL)/arch-$(ARCH)
-CXX = $(TOOLCHAINPREFIX)g++
-CC = $(TOOLCHAINPREFIX)gcc
-AR = $(TOOLCHAINPREFIX)ar
-CFLAGS += -DANDROID_NDK -fpic --sysroot=$(SYSROOT) -MMD -MP
+CFLAGS += -DANDROID_NDK -fpic -MMD -MP -fstack-protector-all
 CXXFLAGS += -fno-rtti -fno-exceptions
-LDFLAGS += --sysroot=$(SYSROOT)
 SHLDFLAGS = -Wl,--no-undefined -Wl,-z,relro -Wl,-z,now -Wl,-soname,lib$(PROJECT_NAME).so
+UTSHLDFLAGS = -Wl,-soname,libut.so
 
+ifeq ($(NDK_TOOLCHAIN_VERSION), clang)
+  LLVM_INSTALL_DIR = $(wildcard $(NDKROOT)/toolchains/llvm/prebuilt/*/bin)
+
+  ifeq ($(ARCH), arm)
+    TARGET_NAME = armv7a-linux-androideabi
+  else ifeq ($(ARCH), arm64)
+    TARGET_NAME = aarch64-linux-android
+  else ifeq ($(ARCH), x86)
+    TARGET_NAME = i686-linux-android
+  else ifeq ($(ARCH), x86_64)
+    TARGET_NAME = x86_64-linux-android
+  else
+    $(error "does not support this arch now!")
+  endif
+
+  CC = $(LLVM_INSTALL_DIR)/$(TARGET_NAME)$(NDKLEVEL)-clang
+  CXX = $(LLVM_INSTALL_DIR)/$(TARGET_NAME)$(NDKLEVEL)-clang++
+  AR = $(LLVM_INSTALL_DIR)/llvm-ar
+  SYSROOT = $(LLVM_INSTALL_DIR)/../sysroot
+else
+  TOOLCHAINPREFIX = $(shell NDK_PROJECT_PATH=$(SRC_PATH)/codec/build/android/dec make --no-print-dir -f $(NDKROOT)/build/core/build-local.mk DUMP_TOOLCHAIN_PREFIX APP_ABI=$(APP_ABI))
+  TOOLCHAIN_NAME = $(shell NDK_TOOLCHAIN_VERSION= NDK_PROJECT_PATH=$(SRC_PATH)/codec/build/android/dec make --no-print-dir -f $(NDKROOT)/build/core/build-local.mk DUMP_TOOLCHAIN_NAME APP_ABI=$(APP_ABI))
+  GCC_TOOLCHAIN_PATH = $(shell dirname $(TOOLCHAINPREFIX) | xargs dirname )
+  SYSROOT = $(NDKROOT)/platforms/android-$(NDKLEVEL)/arch-$(ARCH)
+
+  CXX = $(TOOLCHAINPREFIX)g++
+  CC = $(TOOLCHAINPREFIX)gcc
+  AR = $(TOOLCHAINPREFIX)ar
+  CFLAGS += -isystem $(NDKROOT)/sysroot/usr/include -isystem $(NDKROOT)/sysroot/usr/include/$(TOOLCHAIN_NAME) -D__ANDROID_API__=$(NDKLEVEL) --sysroot=$(SYSROOT)
+endif
+
+# background reading: https://android.googlesource.com/platform/ndk/+/master/docs/BuildSystemMaintainers.md#unwinding
+LDFLAGS += -Wl,--exclude-libs,libgcc.a -Wl,--exclude-libs,libunwind.a
+
+ifneq ($(findstring /,$(CXX)),$(findstring \,$(CXX)))
 ifneq ($(CXX),$(wildcard $(CXX)))
 ifneq ($(CXX).exe,$(wildcard $(CXX).exe))
-$(error Compiler not found, bad NDKROOT or ARCH?)
+$(error Compiler not found, bad NDKROOT or ARCH? $(CXX))
 endif
 endif
-
-STL_INCLUDES = \
-    -I$(NDKROOT)/sources/cxx-stl/stlport/stlport
-STL_LIB = \
-    $(NDKROOT)/sources/cxx-stl/stlport/libs/$(APP_ABI)/libstlport_static.a
+endif
 
 GTEST_INCLUDES = $(STL_INCLUDES)
 CODEC_UNITTEST_INCLUDES = $(STL_INCLUDES)
@@ -67,18 +99,26 @@ MODULE_LDFLAGS = $(STL_LIB)
 ifeq (./,$(SRC_PATH))
 binaries: decdemo encdemo
 
+NDK_BUILD = $(NDKROOT)/ndk-build APP_ABI=$(APP_ABI) APP_PLATFORM=$(TARGET) NDK_TOOLCHAIN_VERSION=$(NDK_TOOLCHAIN_VERSION) V=$(V:Yes=1)
+
 decdemo: libraries
-	cd ./codec/build/android/dec && $(NDKROOT)/ndk-build -B APP_ABI=$(APP_ABI) && android update project -t $(TARGET) -p . && ant debug
+	$(NDK_BUILD) -C codec/build/android/dec -B
+	./gradlew test-dec:assembleDebug
 
 encdemo: libraries
-	cd ./codec/build/android/enc && $(NDKROOT)/ndk-build -B APP_ABI=$(APP_ABI) && android update project -t $(TARGET) -p . && ant debug
+	$(NDK_BUILD) -C codec/build/android/enc -B
+	./gradlew test-enc:assembleDebug
 
 clean_Android: clean_Android_dec clean_Android_enc
 
 clean_Android_dec:
-	-cd ./codec/build/android/dec && $(NDKROOT)/ndk-build APP_ABI=$(APP_ABI) clean && ant clean
+	-$(NDK_BUILD) -C codec/build/android/dec clean
+	-./gradlew test-dec:clean
+
 clean_Android_enc:
-	-cd ./codec/build/android/enc && $(NDKROOT)/ndk-build APP_ABI=$(APP_ABI) clean && ant clean
+	-$(NDK_BUILD) -C codec/build/android/enc clean
+	-./gradlew test-enc:clean
+
 else
 clean_Android:
 	@:

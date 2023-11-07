@@ -125,6 +125,10 @@ GENERATE_Intra8x8_UT (WelsIntra8x8Combined3Sad_AArch64_neon, WelsSampleSadIntra8
 GENERATE_Intra4x4_UT (WelsIntra4x4Combined3Satd_AArch64_neon, 1, WELS_CPU_NEON)
 #endif
 
+#ifdef HAVE_LASX
+GENERATE_Intra8x8_UT (WelsIntra8x8Combined3Sad_lasx, WelsSampleSadIntra8x8Combined3_c, 1, WELS_CPU_LASX)
+#endif
+
 #define ASSERT_MEMORY_FAIL2X(A, B)     \
   if (NULL == B) {                     \
     pMemAlign->WelsFree(A, "Sad_SrcA");\
@@ -672,6 +676,34 @@ GENERATE_Sad16x8_UT (WelsSampleSatd16x8_AArch64_neon, WelsSampleSatd16x8_c, WELS
 GENERATE_Sad16x16_UT (WelsSampleSatd16x16_AArch64_neon, WelsSampleSatd16x16_c, WELS_CPU_NEON)
 #endif
 
+#ifdef HAVE_MMI
+GENERATE_Sad4x4_UT (WelsSampleSad4x4_mmi, WelsSampleSad4x4_c, WELS_CPU_MMI)
+GENERATE_Sad8x8_UT (WelsSampleSad8x8_mmi, WelsSampleSad8x8_c, WELS_CPU_MMI)
+GENERATE_Sad8x16_UT (WelsSampleSad8x16_mmi, WelsSampleSad8x16_c, WELS_CPU_MMI)
+GENERATE_Sad16x8_UT (WelsSampleSad16x8_mmi, WelsSampleSad16x8_c, WELS_CPU_MMI)
+GENERATE_Sad16x16_UT (WelsSampleSad16x16_mmi, WelsSampleSad16x16_c, WELS_CPU_MMI)
+
+GENERATE_Sad4x4_UT (WelsSampleSatd4x4_mmi, WelsSampleSatd4x4_c, WELS_CPU_MMI)
+GENERATE_Sad8x8_UT (WelsSampleSatd8x8_mmi, WelsSampleSatd8x8_c, WELS_CPU_MMI)
+GENERATE_Sad8x16_UT (WelsSampleSatd8x16_mmi, WelsSampleSatd8x16_c, WELS_CPU_MMI)
+GENERATE_Sad16x8_UT (WelsSampleSatd16x8_mmi, WelsSampleSatd16x8_c, WELS_CPU_MMI)
+GENERATE_Sad16x16_UT (WelsSampleSatd16x16_mmi, WelsSampleSatd16x16_c, WELS_CPU_MMI)
+#endif
+
+#ifdef HAVE_LASX
+GENERATE_Sad4x4_UT (WelsSampleSad4x4_lasx, WelsSampleSad4x4_c, WELS_CPU_LASX)
+GENERATE_Sad8x8_UT (WelsSampleSad8x8_lasx, WelsSampleSad8x8_c, WELS_CPU_LASX)
+GENERATE_Sad8x16_UT (WelsSampleSad8x16_lasx, WelsSampleSad8x16_c, WELS_CPU_LASX)
+GENERATE_Sad16x8_UT (WelsSampleSad16x8_lasx, WelsSampleSad16x8_c, WELS_CPU_LASX)
+GENERATE_Sad16x16_UT (WelsSampleSad16x16_lasx, WelsSampleSad16x16_c, WELS_CPU_LASX)
+
+GENERATE_Sad4x4_UT (WelsSampleSatd4x4_lasx, WelsSampleSatd4x4_c, WELS_CPU_LASX)
+GENERATE_Sad8x8_UT (WelsSampleSatd8x8_lasx, WelsSampleSatd8x8_c, WELS_CPU_LASX)
+GENERATE_Sad8x16_UT (WelsSampleSatd8x16_lasx, WelsSampleSatd8x16_c, WELS_CPU_LASX)
+GENERATE_Sad16x8_UT (WelsSampleSatd16x8_lasx, WelsSampleSatd16x8_c, WELS_CPU_LASX)
+GENERATE_Sad16x16_UT (WelsSampleSatd16x16_lasx, WelsSampleSatd16x16_c, WELS_CPU_LASX)
+#endif
+
 #define GENERATE_SadFour_UT(func, CPUFLAGS, width, height) \
 TEST_F (SadSatdAssemblyFuncTest, func) { \
   if (0 == (m_uiCpuFeatureFlag & CPUFLAGS)) \
@@ -719,4 +751,19 @@ GENERATE_SadFour_UT (WelsSampleSadFour8x8_AArch64_neon, WELS_CPU_NEON, 8, 8)
 GENERATE_SadFour_UT (WelsSampleSadFour8x16_AArch64_neon, WELS_CPU_NEON, 8, 16)
 GENERATE_SadFour_UT (WelsSampleSadFour16x8_AArch64_neon, WELS_CPU_NEON, 16, 8)
 GENERATE_SadFour_UT (WelsSampleSadFour16x16_AArch64_neon, WELS_CPU_NEON, 16, 16)
+#endif
+
+#ifdef HAVE_MMI
+GENERATE_SadFour_UT (WelsSampleSadFour8x8_mmi, WELS_CPU_MMI, 8, 8)
+GENERATE_SadFour_UT (WelsSampleSadFour8x16_mmi, WELS_CPU_MMI, 8, 16)
+GENERATE_SadFour_UT (WelsSampleSadFour16x8_mmi, WELS_CPU_MMI, 16, 8)
+GENERATE_SadFour_UT (WelsSampleSadFour16x16_mmi, WELS_CPU_MMI, 16, 16)
+#endif
+
+#ifdef HAVE_LASX
+GENERATE_SadFour_UT (WelsSampleSadFour4x4_lasx, WELS_CPU_LASX, 4, 4)
+GENERATE_SadFour_UT (WelsSampleSadFour8x8_lasx, WELS_CPU_LASX, 8, 8)
+GENERATE_SadFour_UT (WelsSampleSadFour8x16_lasx, WELS_CPU_LASX, 8, 16)
+GENERATE_SadFour_UT (WelsSampleSadFour16x8_lasx, WELS_CPU_LASX, 16, 8)
+GENERATE_SadFour_UT (WelsSampleSadFour16x16_lasx, WELS_CPU_LASX, 16, 16)
 #endif
